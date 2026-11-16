@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/josuep/Dev/STM32-MotionTelemetry/STM32/build/Debug/cmake_install.cmake",
+		"/home/josuep/Dev/STM32-MotionTelemetry/STM32/build/Debug/cmake/stm32cubemx/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
