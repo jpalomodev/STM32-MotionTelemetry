@@ -21,6 +21,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "../Inc/adxl367.h"
+#include "../Inc/protocol.h"
+#include "../Inc/uart.h"
 
 /* USER CODE END Includes */
 
@@ -119,53 +122,26 @@ int main(void) {
         Error_Handler();
     }
 
-    /* Helper functions...
+    /* Validate ADXL367 device id
      */
+    uint8_t ADXL_Devid = 0;
+    ADXL_Op(&hspi1, ADXL_READ, ADXL_DEVID_AD, &ADXL_Devid);
 
-    /* Initialize ADXL register address values
+    ADXL_Init_Measure_Mode(&hspi1);
+
+    uint8_t next_packet_seq = 0;
+    /* Main Loop
      */
-    typedef enum {
-        ADXL_WRITE = 0x0A,
-        ADXL_READ = 0x0B,
-    } ADXL_SPI_COMMAND;
-
-    typedef enum {
-        ADXL_DEVID = 0x00,
-        ADXL_POWER_CTL = 0x2D,
-        ADXL_XDATA = 0x08,
-        ADXL_YDATA = 0x09,
-        ADXL_ZDATA = 0x0A,
-    } ADXL_REGISTER;
-
-    typedef enum {
-        ADXL_MEASURE = 0x02,
-    } ADXL_POWER_CTL_MODE;
-
-    uint8_t tx_command = 0;
-    uint8_t tx_size = 1;
-    uint16_t tx_timeout = 10000;
-
-    uint8_t rx_data = 0;
-    uint8_t rx_size = 1;
-    uint16_t rx_timeout = 10000;
-
-    /* Verify ADXL device ID (ADXL367 - 0xAD)
-     */
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
-
-    tx_command = ADXL_READ;
-    HAL_SPI_Transmit(&hspi1, &tx_command, tx_size, tx_timeout);
-
-    tx_command = ADXL_DEVID;
-    HAL_SPI_Transmit(&hspi1, &tx_command, tx_size, tx_timeout);
-
-    HAL_SPI_Receive(&hspi1, &rx_data, rx_size, tx_timeout);
-
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_SET);
-
     while (1) {
-        printf("ADXL367 DEVID: %d\n", rx_data);
-        HAL_Delay(1000);
+        uint8_t data[6] = {};
+        ADXL_Capture_Data(&hspi1, data);
+
+        uint8_t* packet = Create_Packet(data, next_packet_seq);
+        next_packet_seq = (next_packet_seq + 1) % 256;
+
+        UART_Transmit(&hcom_uart[COM1], packet, 11);
+
+        HAL_Delay(100);
     }
 }
 
@@ -184,8 +160,8 @@ void SystemClock_Config(void) {
     while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {
     }
 
-    /** Initializes the RCC Oscillators according to the specified parameters
-     * in the RCC_OscInitTypeDef structure.
+    /** Initializes the RCC Oscillators according to the specified
+     * parameters in the RCC_OscInitTypeDef structure.
      */
     RCC_OscInitStruct.OscillatorType =
         RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_CSI;
@@ -344,7 +320,8 @@ void MPU_Config(void) {
     /* Disables the MPU */
     HAL_MPU_Disable();
 
-    /** Initializes and configures the Region 0 and the memory to be protected
+    /** Initializes and configures the Region 0 and the memory to be
+     * protected
      */
     MPU_InitStruct.Enable = MPU_REGION_ENABLE;
     MPU_InitStruct.Number = MPU_REGION_NUMBER0;
@@ -375,7 +352,8 @@ void MPU_Config(void) {
  */
 void Error_Handler(void) {
     /* USER CODE BEGIN Error_Handler_Debug */
-    /* User can add his own implementation to report the HAL error return state
+    /* User can add his own implementation to report the HAL error return
+     * state
      */
     __disable_irq();
     while (1) {

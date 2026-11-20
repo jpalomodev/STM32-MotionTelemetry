@@ -1,0 +1,3 @@
+/home/josuep/Dev/STM32-MotionTelemetry/STM32/Core/Src/adxl367.c:7:18:ADXL_Op	32	static
+/home/josuep/Dev/STM32-MotionTelemetry/STM32/Core/Src/adxl367.c:39:18:ADXL_Init_Measure_Mode	24	static
+/home/josuep/Dev/STM32-MotionTelemetry/STM32/Core/Src/adxl367.c:50:18:ADXL_Capture_Data	16	static

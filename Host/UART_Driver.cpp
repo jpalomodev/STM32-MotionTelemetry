@@ -3,17 +3,21 @@
 #include <chrono>
 #include <ctime>
 #include <fcntl.h>
+#include <future>
 #include <iomanip>
 #include <iostream>
+#include <ostream>
+#include <poll.h>
 #include <string>
 #include <thread>
 #include <unistd.h>
 
-UART_Driver::UART_Driver() : uart_fd(-1) {}
+UART_Driver::UART_Driver() : tx_ready(0), rx_ack(0), uart_fd(-1) {}
 
 void UART_Driver::init() {
     UART_Driver::open_connection();
     UART_Driver::configure_terminal();
+    // UART_Driver::handshake();
     UART_Driver::consume();
     UART_Driver::close_connection();
 }
@@ -48,6 +52,7 @@ void UART_Driver::configure_terminal() {
                                 "Failed to get default terminal parameters.");
     }
 
+    termios_custom = termios_default;
     cfmakeraw(&termios_custom);
     cfsetspeed(&termios_custom, B115200);
 
@@ -56,7 +61,7 @@ void UART_Driver::configure_terminal() {
                                 "Failed to set new terminal parameters.");
     }
 
-    if (tcflush(uart_fd, TCIOFLUSH)) {
+    if (tcflush(uart_fd, TCIOFLUSH) == -1) {
         throw std::system_error(errno, std::generic_category(),
                                 "Failed to flush IO data.");
     }
@@ -64,9 +69,51 @@ void UART_Driver::configure_terminal() {
     UART_Driver::log("Configured terminal for raw IO communication ✓");
 }
 
+void UART_Driver::handshake() {
+    UART_Driver::log("Started handshake ✓");
+
+    int ready = 1;
+    if (write(uart_fd, &ready, sizeof(ready)) == -1) {
+        throw std::system_error(errno, std::generic_category(),
+                                "Failed to send RDY message to STM32H533RE.");
+    }
+
+    UART_Driver::log("Sent RDY message to STM32H533RE (Awaiting response) ✓");
+
+    pollfd pfd{uart_fd, POLLIN, 0};
+    constexpr uint32_t kPollTimeout = 5000;
+    int poll_result = poll(&pfd, 1, kPollTimeout);
+
+    if (poll_result == -1) {
+        throw std::system_error(errno, std::generic_category(),
+                                "Failed to poll for input event.");
+    }
+
+    if (poll_result == 0) {
+        throw std::system_error(errno, std::generic_category(),
+                                "Failed to receive ACK message from "
+                                "STM32H533RE before timeout.");
+    }
+
+    if (read(uart_fd, &rx_ack, 1) == -1) {
+        throw std::system_error(errno, std::generic_category(),
+                                "Failed to read ACK message from STM32H533RE.");
+    };
+
+    if (rx_ack == 0) {
+        throw std::system_error(
+            errno, std::generic_category(),
+            "Failed to complete handshake between Host and STM32H533RE.");
+    }
+
+    UART_Driver::log("Received ACK message from STM32H533RE ✓");
+}
+
 void UART_Driver::consume() {
-    UART_Driver::log("Starting ADXL367 data consumption ✓");
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    UART_Driver::log("Started ADXL367 consumption ✓");
+
+    uint8_t packet[11] = {};
+    uint8_t packet_progress = 0;
 
     while (true) {
         size_t max_bytes = sizeof(rx_buff) / sizeof(rx_buff[0]);
@@ -77,7 +124,31 @@ void UART_Driver::consume() {
                                     "Failed to read data from STM32H533RE.");
         }
 
-        std::cout << std::string(rx_buff, bytes_read);
+        for (size_t i = 0; i < (size_t)bytes_read; i++) {
+            if (packet_progress != 0 && packet_progress != 11) {
+                packet[packet_progress] = rx_buff[i];
+                packet_progress++;
+
+                if (packet_progress == 11) {
+                    std::cout << std::format("[PACKET {}] ", (int)packet[2]);
+                    std::cout << (int)packet[3] << " |";
+                    std::cout << (int)packet[5] << " |";
+                    std::cout << (int)packet[7] << "\n";
+
+                    for (int j = 0; j < 11; j++) {
+                        packet[j] = 0;
+                    }
+
+                    packet_progress = 0;
+                }
+            }
+
+            else if (i != 0 && rx_buff[i] == 0x55 && rx_buff[i - 1] == 0xA2) {
+                packet[0] = 0xA2;
+                packet[1] = 0x55;
+                packet_progress += 2;
+            }
+        }
     }
 }
 
