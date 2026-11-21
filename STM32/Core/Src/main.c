@@ -141,7 +141,7 @@ int main(void) {
 
         UART_Transmit(&hcom_uart[COM1], packet, 11);
 
-        HAL_Delay(100);
+        HAL_Delay(2.5);
     }
 }
 

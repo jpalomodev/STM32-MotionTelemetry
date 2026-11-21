@@ -114,6 +114,7 @@ void UART_Driver::consume() {
 
     uint8_t packet[11] = {};
     uint8_t packet_progress = 0;
+    bool sync1_found = false;
 
     while (true) {
         size_t max_bytes = sizeof(rx_buff) / sizeof(rx_buff[0]);
@@ -130,10 +131,26 @@ void UART_Driver::consume() {
                 packet_progress++;
 
                 if (packet_progress == 11) {
-                    std::cout << std::format("[PACKET {}] ", (int)packet[2]);
-                    std::cout << (int)packet[3] << " |";
-                    std::cout << (int)packet[5] << " |";
-                    std::cout << (int)packet[7] << "\n";
+                    // Use packet data
+                    int16_t x_data =
+                        (((packet[3] & (1 << 7)) == (1 << 7) ? (3 << 14) : 0) |
+                         ((packet[3] << 6) | (packet[4] >> 2)));
+                    double x_data_scaled = x_data * 0.00025;
+
+                    int16_t y_data =
+                        ((packet[5] & (1 << 7)) == (1 << 7) ? (3 << 14) : 0) |
+                        ((packet[5] << 6) | (packet[6] >> 2));
+                    double y_data_scaled = y_data * 0.00025;
+
+                    int16_t z_data =
+                        ((packet[7] & (1 << 7)) == (1 << 7) ? (3 << 14) : 0) |
+                        ((packet[7] << 6) | (packet[8] >> 2));
+                    double z_data_scaled = z_data * 0.00025;
+
+                    std::cout << std::format(
+                        "[PACKET {:<3}] X: {:+7.4f} g    Y: "
+                        "{:+7.4f} g    Z: {:+7.4f} g\n",
+                        packet[2], x_data_scaled, y_data_scaled, z_data_scaled);
 
                     for (int j = 0; j < 11; j++) {
                         packet[j] = 0;
@@ -143,10 +160,16 @@ void UART_Driver::consume() {
                 }
             }
 
-            else if (i != 0 && rx_buff[i] == 0x55 && rx_buff[i - 1] == 0xA2) {
+            else if ((i != 0 && rx_buff[i] == 0x55 && rx_buff[i - 1] == 0xA2) ||
+                     (i == 0 && sync1_found && rx_buff[i] == 0x55)) {
                 packet[0] = 0xA2;
                 packet[1] = 0x55;
                 packet_progress += 2;
+                sync1_found = false;
+            }
+
+            else if (i == (size_t)bytes_read - 1 && rx_buff[i] == 0xA2) {
+                sync1_found = true;
             }
         }
     }
